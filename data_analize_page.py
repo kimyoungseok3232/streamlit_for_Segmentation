@@ -51,7 +51,7 @@ def load_data():
     train_data = {'image_path':[],'label_path':[]}
 
     for path in train_img_dir:
-        img_list = os.listdir(train_img+path)
+        img_list = [file for file in os.listdir(train_img+path) if file.endswith(('.jpg', '.png'))]
         for img in img_list:
             train_data['image_path'].append(train_img+path+'/'+img)
             train_data['label_path'].append(train_label+path+'/'+img[:-4]+'.json')
@@ -63,7 +63,7 @@ def load_data():
     test_data = {'image_path':[], 'label_path':[]}
 
     for path in test_img_dir:
-        img_list = os.listdir(test_img+path)
+        img_list = [file for file in os.listdir(test_img+path) if file.endswith(('.jpg', '.png'))]
         for img in img_list:
             test_data['image_path'].append(test_img+path+'/'+img)
             test_data['label_path'].append(False)
@@ -92,15 +92,24 @@ def read_image(path):
     return img
 
 @st.cache_data()
+def rle_to_mask(rle, shape):
+    """ RLE 데이터를 디코딩하여 2D 마스크 배열 생성 """
+    mask = np.zeros(shape[0] * shape[1], dtype=np.uint8)
+    rle_pairs = [int(x) for x in rle.split()]
+    for idx in range(0, len(rle_pairs), 2):
+        start_pixel = rle_pairs[idx]
+        run_length = rle_pairs[idx + 1]
+        mask[start_pixel:start_pixel + run_length] = 1
+    return mask.reshape(shape)
+
 def labeled_image(img, image_path, csv):
     if not csv.empty:
         csv = csv.fillna('')
         img_name = image_path.split('/')[-1]
         label = csv[csv['image_name']==img_name]
         for _, classes, rle in label.values:
-            pixels = rle_to_pixels(rle, img.shape)
-            for x, y in pixels:
-                cv2.circle(img, (x, y), radius=1, color=colors[classes], thickness=-1)
+            mask = rle_to_mask(rle, img.shape[:2])
+            img[mask == 1] = (img[mask == 1] * 0.5 + np.array(colors[classes]) * 0.5).astype(np.uint8)
     return img
 
 def get_train_image(image_path, label_path):
@@ -110,23 +119,6 @@ def get_train_image(image_path, label_path):
         for anno in label['annotations']:
             cv2.polylines(img, [np.array(anno['points'], dtype=np.int32)], True, colors[anno['label']], 10)
     return img
-
-@st.cache_data()
-def rle_to_pixels(rle, shape):
-    """ RLE 데이터를 디코딩하여 (x, y) 픽셀 좌표 리스트로 변환 """
-    pixels = []
-    rle_pairs = [int(x) for x in rle.split()]
-    for idx in range(0, len(rle_pairs), 2):
-        start_pixel = rle_pairs[idx]
-        run_length = rle_pairs[idx + 1]
-        
-        # 시작 위치에서 run_length 만큼 픽셀을 채우기
-        for i in range(run_length):
-            pixels.append(start_pixel + i)
-    
-    # 1D 위치를 2D (x, y) 좌표로 변환
-    pixel_coords = [(p % shape[1], p // shape[1]) for p in pixels]
-    return pixel_coords
 
 def get_test_image(image_path, csv):
     label_img = 0
@@ -271,6 +263,7 @@ def main():
             show_dataframe(testd, st, 'test', ccsv)
             if st.sidebar.button("새 csv 파일 업로드"):
                 upload_csv(csv)
+
 def login(password, auth):
     if password in auth:
         st.session_state['login'] = True
