@@ -108,8 +108,11 @@ def labeled_image(img, image_path, csv):
         img_name = image_path.split('/')[-1]
         label = csv[csv['image_name']==img_name]
         for _, classes, rle in label.values:
+            color = np.array(colors[classes])
             mask = rle_to_mask(rle, img.shape[:2])
-            img[mask == 1] = (img[mask == 1] * 0.5 + np.array(colors[classes]) * 0.5).astype(np.uint8)
+            if st.session_state['Choosed_annotation'] and classes not in st.session_state['Choosed_annotation']: continue
+            elif classes in st.session_state['Choosed_annotation']: img[mask == 1] = color
+            else: img[mask == 1] = (img[mask == 1] * 0.5 + color * 0.5).astype(np.uint8)
     return img
 
 def get_train_image(image_path, label_path):
@@ -117,6 +120,7 @@ def get_train_image(image_path, label_path):
     if st.session_state['show_label']:
         label = read_json(label_path)
         for anno in label['annotations']:
+            if st.session_state['Choosed_annotation'] and anno['label'] not in st.session_state['Choosed_annotation']: continue
             cv2.polylines(img, [np.array(anno['points'], dtype=np.int32)], True, colors[anno['label']], 10)
     return img
 
@@ -237,6 +241,11 @@ def main():
     traind, testd = load_data()
 
     if option == "이미지 데이터":
+        with st.sidebar.expander("특정 뼈만 선택"):
+            st.session_state['Choosed_annotation'] = []
+            for category in colors:
+                if st.checkbox(category):
+                    st.session_state['Choosed_annotation'].append(category)
         # 트레인 데이터 출력
         choose_data = st.sidebar.selectbox("트레인/테스트", ("train", "test"))
         st.session_state['show_label'] = st.sidebar.checkbox("라벨 표시", value=True)
